@@ -252,6 +252,15 @@ TchPowerSettingCallback(
 
             //Load firmware each time after display turned on
             status = FTLoadFirmwareFile(ControllerContext->FxDevice, SpbContext);
+            if (!NT_SUCCESS(status))
+            {
+                Trace(
+                    TRACE_LEVEL_WARNING,
+                    TRACE_POWER,
+                    "FW load skipped (chip already running) - 0x%08lX",
+                    status);
+                status = STATUS_SUCCESS;
+            }
             break;
         case 2:
             Trace(

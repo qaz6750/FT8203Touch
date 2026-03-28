@@ -155,6 +155,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="..\firmware\focaltech_ts_fw_huaxing.bin" />
+    <None Include="..\firmware\ft8203_gts7xllite.bin" />
   </ItemGroup>
 </Project>

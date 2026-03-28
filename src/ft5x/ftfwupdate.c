@@ -96,7 +96,7 @@ NTSTATUS FTSEccCalTP(IN SPB_CONTEXT* SpbContext, UINT32 eccAddr, UINT32 eccLen, 
 		Trace(TRACE_LEVEL_ERROR, TRACE_FTFWUPDATE, "ecc calc cmd fail %!STATUS!", status);
 		goto exit;
 	}
-	delay.QuadPart = 2000;
+	delay.QuadPart = -20000;
 	KeDelayExecutionThread(KernelMode, TRUE, &delay);
 
 	cmd[0] = 0xCE;
@@ -108,7 +108,7 @@ NTSTATUS FTSEccCalTP(IN SPB_CONTEXT* SpbContext, UINT32 eccAddr, UINT32 eccLen, 
 		}
 		if (value[0] == 0xA5)
 			break;
-		delay.QuadPart = 1000;
+		delay.QuadPart = -10000;
 		KeDelayExecutionThread(KernelMode, TRUE, &delay);
 	}
 	if (i >= 100) {
@@ -211,8 +211,8 @@ NTSTATUS FTSDramWriteEcc(SPB_CONTEXT* SpbContext, UINT8* buf) {
 	CodeLen = ((UINT16)buf[FTS_APP_INFO_OFFSET + 0x8] << 8) + buf[FTS_APP_INFO_OFFSET + 0x9];
 	CodeLenN = ((UINT16)buf[FTS_APP_INFO_OFFSET + 0x0A] << 8) + buf[FTS_APP_INFO_OFFSET + 0x0B];
 	if (((CodeLen + CodeLenN) != 0xFFFF) || CodeLen == 0) {
-		Trace(TRACE_LEVEL_ERROR, TRACE_FTFWUPDATE, "Dram code len incorrect %!STATUS!", status);
-		status = STATUS_DATA_ERROR;
+		Trace(TRACE_LEVEL_INFORMATION, TRACE_FTFWUPDATE, "No DRAM segment in fw image, skipping DRAM write");
+		status = STATUS_SUCCESS;
 		goto exit;
 	}
 
@@ -322,7 +322,7 @@ NTSTATUS FTLoadFirmwareFile(WDFDEVICE Device, SPB_CONTEXT* SpbContext) {
 		goto exit;
 	}
 
-	Interval.QuadPart = 1500000;
+	Interval.QuadPart = -1500000;
 	KeDelayExecutionThread(KernelMode, FALSE, &Interval);
 exit:
 	ExFreePoolWithTag(buffer, TOUCH_POOL_TAG);

@@ -32,6 +32,28 @@
 #define FTS_CMD_START1  0x55
 #define FTS_CMD_START2  0xAA
 #define FTS_CMD_READ_ID 0x90
+#define FTS_REG_CHIP_ID 0xA3
+#define FTS_REG_POWER_MODE 0xA5
+#define FTS_REG_POWER_MODE_SLEEP 0x03
+#define FTS_REG_FW_VER 0xA6
+#define FTS_REG_CHARGER_MODE_EN 0x8B
+
+#define FTS_MAX_POINTS_SUPPORT 10
+#define FTS_ONE_TCH_LEN 6
+#define FTS_TOUCH_DATA_LEN (FTS_MAX_POINTS_SUPPORT * FTS_ONE_TCH_LEN + 3)
+#define FTS_MAX_ID 0x0A
+
+#define FTS_TOUCH_X_H_POS 3
+#define FTS_TOUCH_X_L_POS 4
+#define FTS_TOUCH_Y_H_POS 5
+#define FTS_TOUCH_Y_L_POS 6
+#define FTS_TOUCH_POINT_NUM 2
+#define FTS_TOUCH_EVENT_POS 3
+#define FTS_TOUCH_ID_POS 5
+
+#define FTS_TOUCH_DOWN 0
+#define FTS_TOUCH_UP 1
+#define FTS_TOUCH_CONTACT 2
 
 // Ignore warning C4152: nonstandard extension, function/data pointer conversion in expression
 #pragma warning (disable : 4152)

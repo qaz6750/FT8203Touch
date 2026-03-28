@@ -464,9 +464,7 @@
     <ClInclude Include="..\include\ft5x\ftinternal.h" />
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="..\firmware\focaltech_ts_fw_huaxing.bin">
-      <FileType>Document</FileType>
-    </CopyFileToFolders>
+    <None Include="..\firmware\ft8203_gts7xllite.bin" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

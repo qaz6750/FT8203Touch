@@ -124,6 +124,8 @@ Return Value:
     UINT32 base = 0;
 
     UINT8 input_id = 0;
+    UINT8 event_flag = 0;
+    UINT8 point_num = 0;
     UINT8 point[91] = { 0x0 };
     point[0] = 0x1;
 
@@ -133,17 +135,38 @@ Return Value:
         goto exit;
     }
 
-    for (UINT8 i = 0; i < 10; i++) {
-        base = 6 * i;
-        input_id = point[5 + base] >> 4;
-        if (input_id >= 10)
-            continue;
+    point_num = point[FTS_TOUCH_POINT_NUM] & 0x0F;
+    if (point_num > FTS_MAX_POINTS_SUPPORT) {
+        Trace(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "invalid point_num(%d)", point_num);
+        goto exit;
+    }
 
-        if ((point[3 + base] >> 6) == 0x0 || (point[3 + base] >> 6) == 0x2) {
+    for (UINT8 i = 0; i < FTS_MAX_POINTS_SUPPORT; i++) {
+        base = FTS_ONE_TCH_LEN * i;
+        input_id = point[FTS_TOUCH_ID_POS + base] >> 4;
+        if (input_id >= FTS_MAX_ID)
+            break;
+
+        event_flag = point[FTS_TOUCH_EVENT_POS + base] >> 6;
+
+        if (event_flag == FTS_TOUCH_DOWN || event_flag == FTS_TOUCH_CONTACT) {
             Data->States[input_id] = OBJECT_STATE_FINGER_PRESENT_WITH_ACCURATE_POS;
-            Data->Positions[input_id].X = ((point[3 + base] & 0x0F) << 8) + (point[4 + base] & 0xFF);
-            Data->Positions[input_id].Y = ((point[5 + base] & 0x0F) << 8) + (point[6 + base] & 0xFF);
-       }
+            Data->Positions[input_id].X = ((point[FTS_TOUCH_X_H_POS + base] & 0x0F) << 8) + (point[FTS_TOUCH_X_L_POS + base] & 0xFF);
+            Data->Positions[input_id].Y = ((point[FTS_TOUCH_Y_H_POS + base] & 0x0F) << 8) + (point[FTS_TOUCH_Y_L_POS + base] & 0xFF);
+        }
+        else if (event_flag == FTS_TOUCH_UP) {
+            Data->States[input_id] = OBJECT_STATE_NOT_PRESENT;
+        }
+    }
+
+    //
+    // If firmware reports 0 active points, force all states to NOT_PRESENT
+    // to prevent stale CONTACT events from being interpreted as new touches
+    //
+    if (point_num == 0) {
+        for (UINT8 i = 0; i < FTS_MAX_POINTS_SUPPORT; i++) {
+            Data->States[i] = OBJECT_STATE_NOT_PRESENT;
+        }
     }
 
 exit:
