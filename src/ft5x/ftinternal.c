@@ -32,7 +32,22 @@ Ft5xBuildFunctionsTable(
 )
 {
       UNREFERENCED_PARAMETER(SpbContext);
-      UNREFERENCED_PARAMETER(ControllerContext);
+
+      //
+      // Open the shared named kernel event created by Wacom pen driver.
+      // When signaled, pen is in proximity and we should suppress touch.
+      //
+      {
+            UNICODE_STRING eventName;
+            RtlInitUnicodeString(&eventName, L"\\BaseNamedObjects\\WacomPenActive");
+            ControllerContext->PenActiveEvent = IoCreateNotificationEvent(
+                  &eventName,
+                  &ControllerContext->PenActiveEventHandle);
+            if (ControllerContext->PenActiveEvent != NULL)
+            {
+                  KeClearEvent(ControllerContext->PenActiveEvent);
+            }
+      }
 
       return STATUS_SUCCESS;
 }
@@ -184,6 +199,31 @@ TchServiceObjectInterrupts(
       DETECTED_OBJECTS data;
 
       RtlZeroMemory(&data, sizeof(data));
+
+      //
+      // If pen is in proximity, suppress all touch input (palm rejection).
+      // The Wacom pen driver signals this via a shared kernel event.
+      //
+      if (ControllerContext->PenActiveEvent != NULL &&
+          KeReadStateEvent(ControllerContext->PenActiveEvent) != 0)
+      {
+            //
+            // Still read the hardware to clear the interrupt, but report
+            // zero touches so the OS sees all fingers lifted.
+            //
+            status = Ft5xGetObjectStatusFromControllerF12(
+                  ControllerContext,
+                  SpbContext,
+                  &data
+            );
+
+            //
+            // Force all-up report to release any fingers currently down
+            //
+            RtlZeroMemory(&data, sizeof(data));
+            status = ReportObjects(ReportContext, data);
+            goto exit;
+      }
 
       //
       // See if new touch data is available

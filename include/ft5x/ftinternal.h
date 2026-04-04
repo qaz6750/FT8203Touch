@@ -226,6 +226,12 @@ typedef struct _FT5X_CONTROLLER_CONTEXT
 	BYTE MaxFingers;
 
     int HidQueueCount;
+
+	//
+	// Shared kernel event for pen-active detection (from Wacom pen driver)
+	//
+	PKEVENT PenActiveEvent;
+	HANDLE  PenActiveEventHandle;
 } FT5X_CONTROLLER_CONTEXT;
 
 NTSTATUS
