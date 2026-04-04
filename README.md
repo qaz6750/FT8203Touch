@@ -1,12 +1,12 @@
-# Focal Tech Touch FT8756 Controller Driver for Windows
-In this repository you can find the FT8756 touch controller driver for Windows (KMDF).
-This driver has been only tested with FT8756 controller found in Xiaomi Redmi Note 9S/Pro
+# Focal Tech FT8203 Touch Controller Driver for Windows
 
-This repository has been forked from https://github.com/theR4K/SynapticsTouch for the base and modified to work with Focal Tech digitizers, and again it was forked from https://github.com/gus33000/FocalTechTouch. Rest of the README is from the original fork.
+KMDF HID miniport driver for FocalTech FT8203 touch controller (I2C), targeting Samsung Galaxy Tab S7 FE Wi-Fi (SM-T733).
+
+Originally forked from [theR4K/SynapticsTouch](https://github.com/theR4K/SynapticsTouch) → [gus33000/FocalTechTouch](https://github.com/gus33000/FocalTechTouch), then rewritten for FT8203.
+
+## Features
+- Multi-touch (up to 10 points)
+- Palm rejection — listens for the `WacomPenActive` shared kernel event from the Wacom pen driver, suppresses all touch input while pen is in proximity
 
 ## Disclaimer
-This driver is not finished.
-It contains debug code and might be missing comments as well.
-Tracing has been replaced with KdPrintEx for various reason making development easier on some versions of Windows.
-
-Have fun =)
+Work in progress. Debug code present, comments may be incomplete.
