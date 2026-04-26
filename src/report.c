@@ -30,7 +30,25 @@
 
 WDFTIMER  timerHandle;
 PREPORT_CONTEXT cachedReportContext = NULL;
-DETECTED_OBJECTS objectData;
+
+//
+// Timestamp of the most recent touch interrupt, in 100ns units.
+// Used by the watchdog to detect stuck touches (missed UP events).
+//
+volatile LONGLONG g_LastInterruptTime = 0;
+
+//
+// If no interrupt arrives within this many milliseconds of the last one,
+// the watchdog considers any remaining cached touches to be stuck and
+// releases them.  Matches the Android fts_point_report_check interval.
+//
+#define WATCHDOG_INACTIVITY_THRESHOLD_MS 100
+
+//
+// Initial delay before the watchdog fires after a touch-down interrupt.
+// Must be greater than WATCHDOG_INACTIVITY_THRESHOLD_MS.
+//
+#define WATCHDOG_TIMEOUT_MS 200
 
 NTSTATUS
 ReportWakeup(
@@ -474,52 +492,81 @@ exit:
 }
 
 NTSTATUS
-TchContinuousObjectInterruptServicingEvtTimerFunc(
+TchWatchdogTimerCallback(
 	IN WDFTIMER Timer
 )
+/*++
+
+Routine Description:
+
+	Watchdog timer callback.  Fires WATCHDOG_TIMEOUT_MS after the last touch
+	interrupt.
+
+	Checks whether the elapsed time since that interrupt exceeds
+	WATCHDOG_INACTIVITY_THRESHOLD_MS.  If so, any touches still held in the
+	cache are considered stuck (the controller missed sending an UP event) and
+	an all-up report is sent to release them.
+
+	If a more recent interrupt has arrived (elapsed < threshold), the watchdog
+	is re-queued for another WATCHDOG_TIMEOUT_MS so it can check again later.
+
+	This mirrors the Android kernel fts_point_report_check mechanism
+	(PRC_INTR_INTERVALS / POINT_REPORT_CHECK_WAIT_TIME).
+
+--*/
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	Trace(
-            TRACE_LEVEL_ERROR,
-		TRACE_REPORTING,
-		"TchContinuousObjectInterruptServicingEvtTimerFunc ENTRY");
-
-      if (cachedReportContext == NULL)
-      {
-		Trace(
-			TRACE_LEVEL_ERROR,
-			TRACE_REPORTING,
-			"Error while reporting objects - cachedReportContext is NULL");
-
-            WdfTimerStop(Timer, FALSE);
-		goto exit;
-      }
-
-	status = ReportObjectsInternal(
-		cachedReportContext,
-		objectData);
-
-	if (!NT_SUCCESS(status))
+	if (cachedReportContext == NULL)
 	{
-		Trace(
-			TRACE_LEVEL_ERROR,
-			TRACE_REPORTING,
-			"Error while reporting objects - 0x%08lX",
-			status);
-
-            WdfTimerStop(Timer, FALSE);
-            status = STATUS_SUCCESS;
 		goto exit;
 	}
 
-exit:
-	Trace(
-            TRACE_LEVEL_ERROR,
-		TRACE_REPORTING,
-		"TchContinuousObjectInterruptServicingEvtTimerFunc EXIT - 0x%08lX",
-		status);
+	//
+	// Compute elapsed time since the last touch interrupt.
+	//
+	ULONG64 qpcTimestamp;
+	LONGLONG currentTime = (LONGLONG)KeQueryInterruptTimePrecise(&qpcTimestamp);
+	LONGLONG elapsedMs = (currentTime - g_LastInterruptTime) / 10000;
 
+	if (elapsedMs >= WATCHDOG_INACTIVITY_THRESHOLD_MS)
+	{
+		//
+		// No interrupt for a while.  Release any touches that are still
+		// flagged as down – they are stuck (missed UP event).
+		//
+		if (cachedReportContext->Cache.DownCount > 0)
+		{
+			DETECTED_OBJECTS emptyData;
+			RtlZeroMemory(&emptyData, sizeof(emptyData));
+
+			status = ReportObjectsInternal(cachedReportContext, emptyData);
+
+			if (!NT_SUCCESS(status))
+			{
+				Trace(
+					TRACE_LEVEL_ERROR,
+					TRACE_REPORTING,
+					"Watchdog: error sending all-up report - 0x%08lX",
+					status);
+
+				status = STATUS_SUCCESS;
+			}
+		}
+		//
+		// One-shot: do not re-queue the timer.
+		//
+	}
+	else
+	{
+		//
+		// A recent interrupt arrived – the touch is still active.
+		// Re-queue the watchdog to check again later.
+		//
+		WdfTimerStart(Timer, WDF_REL_TIMEOUT_IN_MS(WATCHDOG_TIMEOUT_MS));
+	}
+
+exit:
 	return status;
 }
 
@@ -535,9 +582,12 @@ ReportConfigureContinuousSimulationTimer(
 
 	WDF_TIMER_CONFIG_INIT(
       	&timerConfig,
-      	TchContinuousObjectInterruptServicingEvtTimerFunc);
+      	TchWatchdogTimerCallback);
 
-      timerConfig.Period = 50;
+      //
+      // One-shot watchdog timer – no periodic re-fires.
+      // The callback re-queues itself when needed.
+      //
 
       WDF_OBJECT_ATTRIBUTES_INIT(&timerAttributes);
       timerAttributes.ParentObject = DeviceHandle;
@@ -570,41 +620,42 @@ ReportObjectsContinuous(
 {
       NTSTATUS status = STATUS_SUCCESS;
 
-	Trace(
-            TRACE_LEVEL_ERROR,
-		TRACE_REPORTING,
-		"ReportObjectsContinuous ENTRY");
+	//
+	// Record the time of this interrupt so the watchdog can detect inactivity.
+	//
+	ULONG64 qpcTimestamp;
+	g_LastInterruptTime = (LONGLONG)KeQueryInterruptTimePrecise(&qpcTimestamp);
 
-      WdfTimerStop(timerHandle, TRUE);
+	cachedReportContext = ReportContext;
 
-      cachedReportContext = ReportContext;
-
-      RtlCopyMemory(&objectData, &data, sizeof(objectData));
+	//
+	// Report the new touch data immediately.  Using WdfTimerStop(FALSE)
+	// (non-blocking) avoids stalling this DPC for up to 50 ms while
+	// waiting for a timer callback to finish – that was the root cause of
+	// the rapid-tap latency.
+	//
+	WdfTimerStop(timerHandle, FALSE);
 
 	status = ReportObjectsInternal(
 		ReportContext,
-		objectData);
+		data);
 
 	if (!NT_SUCCESS(status))
 	{
-		Trace(
-			TRACE_LEVEL_VERBOSE,
-			TRACE_SAMPLES,
-			"Error while reporting objects - 0x%08lX",
-			status);
-
+		//
+		// Error reporting touch data or no active touches – stop the watchdog.
+		//
 		goto exit;
 	}
 
-	WdfTimerStart(timerHandle, WDF_REL_TIMEOUT_IN_MS(50));
+	//
+	// Active touches remain.  Arm the one-shot watchdog: if no new
+	// interrupt arrives within 200 ms, the callback will release any
+	// stuck touches (missed UP events from the controller).
+	//
+	WdfTimerStart(timerHandle, WDF_REL_TIMEOUT_IN_MS(WATCHDOG_TIMEOUT_MS));
 
-exit:	
-      Trace(
-            TRACE_LEVEL_ERROR,
-		TRACE_REPORTING,
-		"ReportObjectsContinuous EXIT - 0x%08lX",
-		status);
-
+exit:
 	return status;
 }
 
