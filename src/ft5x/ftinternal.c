@@ -329,10 +329,37 @@ Ft5xGetFirmwareVersion(
     IN SPB_CONTEXT* SpbContext
 )
 {
-      UNREFERENCED_PARAMETER(SpbContext);
-      UNREFERENCED_PARAMETER(ControllerContext);
+    NTSTATUS status;
+    FT5X_CONTROLLER_CONTEXT* controller;
+    UINT8 cmd;
+    UINT8 fwVer;
 
-      return STATUS_SUCCESS;
+    controller = ControllerContext;
+
+    cmd    = FTS_REG_FW_VER;
+    fwVer  = 0;
+
+    status = FTS_Read(SpbContext, &cmd, &fwVer, 1);
+    if (!NT_SUCCESS(status))
+    {
+        Trace(
+            TRACE_LEVEL_ERROR,
+            TRACE_INIT,
+            "Failed to read firmware version register - 0x%08lX",
+            status);
+        goto exit;
+    }
+
+    controller->FirmwareVersion = fwVer;
+
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_INIT,
+        "FT5X firmware version: 0x%02x",
+        fwVer);
+
+exit:
+    return status;
 }
 
 NTSTATUS

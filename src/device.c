@@ -478,7 +478,9 @@ OnPrepareHardware(
     //
     // Configure the timer for continuous simulation on synaptics hardware that doesn't support it
     //
-    status = ReportConfigureContinuousSimulationTimer(devContext->FxDevice);
+    status = ReportConfigureContinuousSimulationTimer(
+        devContext->FxDevice,
+        (BOOLEAN)(devContext->ReportContext.Props.TouchHardwareLacksContinuousReporting != 0));
 
     if (!NT_SUCCESS(status))
     {

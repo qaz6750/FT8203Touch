@@ -28,7 +28,7 @@
 #include <report.h>
 #include <report.tmh>
 
-WDFTIMER  timerHandle;
+WDFTIMER  timerHandle = NULL;
 PREPORT_CONTEXT cachedReportContext = NULL;
 
 //
@@ -525,8 +525,8 @@ Routine Description:
 	//
 	// Compute elapsed time since the last touch interrupt.
 	//
-	ULONG64 qpcTimestamp;
-	LONGLONG currentTime = (LONGLONG)KeQueryInterruptTimePrecise(&qpcTimestamp);
+	ULONG64 unusedQpcTimestamp;
+	LONGLONG currentTime = (LONGLONG)KeQueryInterruptTimePrecise(&unusedQpcTimestamp);
 	LONGLONG elapsedMs = (currentTime - g_LastInterruptTime) / 10000;
 
 	if (elapsedMs >= WATCHDOG_INACTIVITY_THRESHOLD_MS)
@@ -572,13 +572,24 @@ exit:
 
 NTSTATUS
 ReportConfigureContinuousSimulationTimer(
-	IN WDFDEVICE DeviceHandle
+	IN WDFDEVICE DeviceHandle,
+	IN BOOLEAN   EnableWatchdog
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
 	WDF_TIMER_CONFIG  timerConfig;
 	WDF_OBJECT_ATTRIBUTES  timerAttributes;
+
+	//
+	// Only create the watchdog timer when the hardware requires it.
+	// When TouchHardwareLacksContinuousReporting is not set the firmware
+	// delivers its own UP events reliably; no watchdog is needed.
+	//
+	if (!EnableWatchdog)
+	{
+		goto exit;
+	}
 
 	WDF_TIMER_CONFIG_INIT(
       	&timerConfig,
@@ -623,18 +634,20 @@ ReportObjectsContinuous(
 	//
 	// Record the time of this interrupt so the watchdog can detect inactivity.
 	//
-	ULONG64 qpcTimestamp;
-	g_LastInterruptTime = (LONGLONG)KeQueryInterruptTimePrecise(&qpcTimestamp);
+	ULONG64 unusedQpcTimestamp;
+	g_LastInterruptTime = (LONGLONG)KeQueryInterruptTimePrecise(&unusedQpcTimestamp);
 
 	cachedReportContext = ReportContext;
 
 	//
-	// Report the new touch data immediately.  Using WdfTimerStop(FALSE)
-	// (non-blocking) avoids stalling this DPC for up to 50 ms while
-	// waiting for a timer callback to finish – that was the root cause of
-	// the rapid-tap latency.
+	// Cancel any pending watchdog before reporting the new data.
+	// Use the non-blocking form (FALSE) to avoid stalling the DPC.
+	// Only attempt this when the watchdog timer was actually created.
 	//
-	WdfTimerStop(timerHandle, FALSE);
+	if (timerHandle != NULL)
+	{
+		WdfTimerStop(timerHandle, FALSE);
+	}
 
 	status = ReportObjectsInternal(
 		ReportContext,
@@ -643,17 +656,20 @@ ReportObjectsContinuous(
 	if (!NT_SUCCESS(status))
 	{
 		//
-		// Error reporting touch data or no active touches – stop the watchdog.
+		// Error reporting touch data or no active touches – do not arm watchdog.
 		//
 		goto exit;
 	}
 
 	//
 	// Active touches remain.  Arm the one-shot watchdog: if no new
-	// interrupt arrives within 200 ms, the callback will release any
-	// stuck touches (missed UP events from the controller).
+	// interrupt arrives within WATCHDOG_TIMEOUT_MS, the callback will
+	// release any stuck touches (missed UP events from the controller).
 	//
-	WdfTimerStart(timerHandle, WDF_REL_TIMEOUT_IN_MS(WATCHDOG_TIMEOUT_MS));
+	if (timerHandle != NULL)
+	{
+		WdfTimerStart(timerHandle, WDF_REL_TIMEOUT_IN_MS(WATCHDOG_TIMEOUT_MS));
+	}
 
 exit:
 	return status;

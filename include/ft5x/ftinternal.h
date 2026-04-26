@@ -228,6 +228,12 @@ typedef struct _FT5X_CONTROLLER_CONTEXT
     int HidQueueCount;
 
 	//
+	// Firmware version read from the chip at startup (register 0xA6).
+	// Also written to the device registry key as "FirmwareVersion".
+	//
+	UCHAR FirmwareVersion;
+
+	//
 	// Shared kernel event for pen-active detection (from Wacom pen driver)
 	//
 	PKEVENT PenActiveEvent;

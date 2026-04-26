@@ -107,7 +107,7 @@ TchStartDevice(
 	}
 
 	//
-	// Read and store the firmware version
+	// Read and store the firmware version (best-effort: not fatal on failure)
 	//
 	status = Ft5xGetFirmwareVersion(
 		ControllerContext,
@@ -116,11 +116,55 @@ TchStartDevice(
 	if (!NT_SUCCESS(status))
 	{
 		Trace(
-			TRACE_LEVEL_ERROR,
+			TRACE_LEVEL_WARNING,
 			TRACE_INIT,
-			"Could not get FT5X firmware version - 0x%08lX",
+			"Could not read FT5X firmware version - 0x%08lX (non-fatal, continuing)",
 			status);
-		goto exit;
+		status = STATUS_SUCCESS;
+	}
+	else
+	{
+		//
+		// Persist the firmware version in the device registry so diagnostics
+		// tools (e.g. Device Manager) can query it without talking to the HW.
+		//
+		WDFKEY hKey = NULL;
+		NTSTATUS regStatus;
+
+		regStatus = WdfDeviceOpenRegistryKey(
+			controller->FxDevice,
+			PLUGPLAY_REGKEY_DEVICE,
+			GENERIC_WRITE,
+			WDF_NO_OBJECT_ATTRIBUTES,
+			&hKey);
+
+		if (NT_SUCCESS(regStatus))
+		{
+			UNICODE_STRING valueName;
+			NTSTATUS writeStatus;
+
+			RtlInitUnicodeString(&valueName, L"FirmwareVersion");
+			writeStatus = WdfRegistryAssignULong(hKey, &valueName, controller->FirmwareVersion);
+
+			if (!NT_SUCCESS(writeStatus))
+			{
+				Trace(
+					TRACE_LEVEL_WARNING,
+					TRACE_INIT,
+					"Could not write FirmwareVersion to registry - 0x%08lX",
+					writeStatus);
+			}
+
+			WdfRegistryClose(hKey);
+		}
+		else
+		{
+			Trace(
+				TRACE_LEVEL_WARNING,
+				TRACE_INIT,
+				"Could not open device registry key to store firmware version - 0x%08lX",
+				regStatus);
+		}
 	}
 
 	//

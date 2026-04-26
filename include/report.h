@@ -120,5 +120,6 @@ ReportObjects(
 
 NTSTATUS
 ReportConfigureContinuousSimulationTimer(
-	IN WDFDEVICE DeviceHandle
+	IN WDFDEVICE DeviceHandle,
+	IN BOOLEAN   EnableWatchdog
 );
