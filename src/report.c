@@ -217,6 +217,53 @@ Return Value:
 	int i, j;
 
 	//
+	// When hardware was last read, if any slots reported as lifted, we
+	// must clean out the slot and old touch info. There may be new
+	// finger data using the slot.
+	//
+	for (i = 0; i < MAX_TOUCHES; i++)
+	{
+		//
+		// Sweep for a slot that needs to be cleaned
+		//
+		if (!(Cache->SlotDirty & (1 << i)))
+		{
+			continue;
+		}
+
+		NT_ASSERT(Cache->DownCount > 0);
+
+		//
+		// Find the slot in the reporting list
+		//
+		for (j = 0; j < MAX_TOUCHES; j++)
+		{
+			if (Cache->DownOrder[j] == i)
+			{
+				break;
+			}
+		}
+
+		NT_ASSERT(j != MAX_TOUCHES);
+
+		//
+		// Remove the slot. If the finger lifted was the last in the list,
+		// we just decrement the list total by one. If it was not last, we
+		// shift the trailing list items up by one.
+		//
+		for (; (j < Cache->DownCount - 1) && (j < MAX_TOUCHES - 1); j++)
+		{
+			Cache->DownOrder[j] = Cache->DownOrder[j + 1];
+		}
+		Cache->DownCount--;
+
+		//
+		// Finished, clobber the dirty bit
+		//
+		Cache->SlotDirty &= ~(1 << i);
+	}
+
+	//
 	// Cache the new set of finger data reported by hardware
 	//
 	for (i = 0; i < MAX_TOUCHES; i++)
@@ -257,26 +304,8 @@ Return Value:
 		//
 		if (Cache->Slot[i].status == OBJECT_STATE_NOT_PRESENT)
 		{
+			Cache->SlotDirty |= (1 << i);
 			Cache->SlotValid &= ~(1 << i);
-
-			//
-			// Immediately remove lifted finger from DownOrder
-			//
-			for (j = 0; j < MAX_TOUCHES; j++)
-			{
-				if (Cache->DownOrder[j] == i)
-				{
-					break;
-				}
-			}
-			if (j < Cache->DownCount)
-			{
-				for (; (j < Cache->DownCount - 1) && (j < MAX_TOUCHES - 1); j++)
-				{
-					Cache->DownOrder[j] = Cache->DownOrder[j + 1];
-				}
-				Cache->DownCount--;
-			}
 		}
 	}
 
@@ -323,6 +352,7 @@ Return Value:
 	int fingersToReport = 0;
 	USHORT SctatchX = 0, ScratchY = 0;
 	BOOLEAN HasPen = FALSE;
+	BOOLEAN HasActiveObjects = FALSE;
 
 	//
 	// Process the new touch data by updating our cached state
@@ -332,36 +362,59 @@ Return Value:
 		&ReportContext->Cache);
 
 	//
-	// If no touches are present, send an all-up report to notify the OS
+	// If no touches are present return that no data needed to be reported
 	//
 	if (ReportContext->Cache.DownCount == 0)
 	{
-		RtlZeroMemory(&HidReport, sizeof(HID_INPUT_REPORT));
-		HidReport.ReportID = REPORTID_FINGER;
-		HidReport.TouchReport.ContactCount = 0;
-
-		status = TchSendReport(ReportContext->PingPongQueue, &HidReport);
-		if (!NT_SUCCESS(status))
-		{
-			Trace(
-				TRACE_LEVEL_VERBOSE,
-				TRACE_REPORTING,
-				"Error sending all-up report - 0x%08lX",
-				status);
-		}
-
 		status = STATUS_NO_DATA_DETECTED;
 		goto exit;
 	}
 
-	RtlZeroMemory(&HidReport, sizeof(HID_INPUT_REPORT));
-	HidReport.ReportID = REPORTID_FINGER;
+	for (currentFingerIndex = 0;
+		 currentFingerIndex < ReportContext->Cache.DownCount;
+		 currentFingerIndex++)
+	{
+		int slotIndex = ReportContext->Cache.DownOrder[currentFingerIndex];
+
+		if (ReportContext->Cache.Slot[slotIndex].status != OBJECT_STATE_NOT_PRESENT)
+		{
+			HasActiveObjects = TRUE;
+			break;
+		}
+	}
+
+	// A zero-count report releases the final contact without replaying its ID.
+	// Partial multi-touch releases continue through the normal per-ID path.
+	if (!HasActiveObjects)
+	{
+		RtlZeroMemory(&HidReport, sizeof(HID_INPUT_REPORT));
+		HidReport.ReportID = REPORTID_FINGER;
+
+		status = TchSendReport(ReportContext->PingPongQueue, &HidReport);
+		goto exit;
+	}
 
 	while (TouchesReported != ReportContext->Cache.DownCount)
 	{
+		//
+		// Fill report with the next cached touches
+		//
+		RtlZeroMemory(&HidReport, sizeof(HID_INPUT_REPORT));
+
 		currentFingerIndex = 0;
 
 		fingersToReport = min(ReportContext->Cache.DownCount - TouchesReported, 10);
+
+		HidReport.ReportID = REPORTID_FINGER;
+
+		//
+		// There are only 16-bits for ScanTime, truncate it
+		//
+		//HidReport->ScanTime = Cache->ScanTime & 0xFFFF;
+
+		//
+		// Report the count
+		// We're sending touches using hybrid mode with 5 fingers in our
 
 		HidReport.TouchReport.ContactCount = (UCHAR)ReportContext->Cache.DownCount;
 
@@ -416,10 +469,11 @@ Return Value:
 				&ScratchY,
 				&ReportContext->Props);*/
 
+			HidReport.TouchReport.Contacts[currentFingerIndex].X = SctatchX;
+			HidReport.TouchReport.Contacts[currentFingerIndex].Y = ScratchY;
+
 			if (info.status == OBJECT_STATE_FINGER_PRESENT_WITH_ACCURATE_POS)
 			{
-				HidReport.TouchReport.Contacts[currentFingerIndex].X = SctatchX;
-				HidReport.TouchReport.Contacts[currentFingerIndex].Y = ScratchY;
 				HidReport.TouchReport.Contacts[currentFingerIndex].TipSwitch = FINGER_STATUS;
 				HidReport.TouchReport.Contacts[currentFingerIndex].InRange = 1;
 			}

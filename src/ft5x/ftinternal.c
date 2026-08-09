@@ -141,6 +141,7 @@ Return Value:
     UINT8 input_id = 0;
     UINT8 event_flag = 0;
     UINT8 point_num = 0;
+      UINT8 active_point_count = 0;
     UINT8 point[91] = { 0x0 };
     point[0] = 0x1;
 
@@ -153,6 +154,7 @@ Return Value:
     point_num = point[FTS_TOUCH_POINT_NUM] & 0x0F;
     if (point_num > FTS_MAX_POINTS_SUPPORT) {
         Trace(TRACE_LEVEL_ERROR, TRACE_INTERRUPT, "invalid point_num(%d)", point_num);
+            status = STATUS_DATA_ERROR;
         goto exit;
     }
 
@@ -165,6 +167,16 @@ Return Value:
         event_flag = point[FTS_TOUCH_EVENT_POS + base] >> 6;
 
         if (event_flag == FTS_TOUCH_DOWN || event_flag == FTS_TOUCH_CONTACT) {
+                  if (active_point_count >= point_num) {
+                        Trace(
+                              TRACE_LEVEL_VERBOSE,
+                              TRACE_INTERRUPT,
+                              "ignoring stale active point beyond point_num(%d)",
+                              point_num);
+                        continue;
+                  }
+
+                  active_point_count++;
             Data->States[input_id] = OBJECT_STATE_FINGER_PRESENT_WITH_ACCURATE_POS;
             Data->Positions[input_id].X = ((point[FTS_TOUCH_X_H_POS + base] & 0x0F) << 8) + (point[FTS_TOUCH_X_L_POS + base] & 0xFF);
             Data->Positions[input_id].Y = ((point[FTS_TOUCH_Y_H_POS + base] & 0x0F) << 8) + (point[FTS_TOUCH_Y_L_POS + base] & 0xFF);
