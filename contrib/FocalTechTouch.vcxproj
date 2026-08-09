@@ -419,6 +419,7 @@
   <ItemGroup>
     <Inf Exclude="@(Inf)" Include="..\src\FocalTechTouch.inf" />
     <FilesToPackage Include="$(TargetPath)" Condition="'$(ConfigurationType)'=='Driver' or '$(ConfigurationType)'=='DynamicLibrary'" />
+    <FilesToPackage Include="..\firmware\ft8203_gts7xllite.bin" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\Cross Platform Shim\bitops.c" />
