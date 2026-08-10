@@ -126,68 +126,6 @@ exit:
 	return status;
 }
 
-NTSTATUS
-ReportPen(
-	IN PREPORT_CONTEXT ReportContext,
-	IN BOOLEAN TipSwitch,
-	IN BOOLEAN BarrelSwitch,
-	IN BOOLEAN Invert,
-	IN BOOLEAN Eraser,
-	IN BOOLEAN InRange,
-	IN USHORT  X,
-	IN USHORT  Y,
-	IN USHORT  TipPressure,
-	IN USHORT  XTilt,
-	IN USHORT  YTilt
-)
-{
-	NTSTATUS status;
-	HID_INPUT_REPORT HidReport;
-	RtlZeroMemory(&HidReport, sizeof(HID_INPUT_REPORT));
-
-	USHORT ScratchX = (USHORT)X;
-	USHORT ScratchY = (USHORT)Y;
-
-	//
-	// Perform per-platform x/y adjustments to controller coordinates
-	//
-	TchTranslateToDisplayCoordinates(
-		&ScratchX,
-		&ScratchY,
-		&ReportContext->Props);
-
-	HidReport.ReportID = REPORTID_STYLUS;
-
-	HidReport.PenReport.InRange = InRange;
-	HidReport.PenReport.TipSwitch = TipSwitch;
-	HidReport.PenReport.Eraser = Eraser;
-	HidReport.PenReport.Invert = Invert;
-	HidReport.PenReport.BarrelSwitch = BarrelSwitch;
-
-	HidReport.PenReport.X = ScratchX;
-	HidReport.PenReport.Y = ScratchY;
-	HidReport.PenReport.TipPressure = TipPressure;
-
-	HidReport.PenReport.XTilt = XTilt;
-	HidReport.PenReport.YTilt = YTilt;
-
-	status = TchSendReport(ReportContext->PingPongQueue, &HidReport);
-
-	if (!NT_SUCCESS(status))
-	{
-		Trace(
-			TRACE_LEVEL_ERROR,
-			TRACE_REPORTING,
-			"Error sending hid report for active pen - 0x%08lX",
-			status);
-
-		goto exit;
-	}
-
-exit:
-	return status;
-}
-
 VOID
 ReportUpdateLocalObjectCache(
 	IN DETECTED_OBJECTS* Data,
@@ -351,7 +289,6 @@ Return Value:
 	int currentFingerIndex;
 	int fingersToReport = 0;
 	USHORT SctatchX = 0, ScratchY = 0;
-	BOOLEAN HasPen = FALSE;
 	BOOLEAN HasActiveObjects = FALSE;
 
 	//
@@ -418,43 +355,11 @@ Return Value:
 
 		HidReport.TouchReport.ContactCount = (UCHAR)ReportContext->Cache.DownCount;
 
-		HasPen = FALSE;
-
 		for (currentFingerIndex = 0; currentFingerIndex < fingersToReport; currentFingerIndex++)
 		{
 			int currentlyReporting = ReportContext->Cache.DownOrder[TouchesReported];
 
 			OBJECT_INFO info = ReportContext->Cache.Slot[currentlyReporting];
-
-			if (info.status == OBJECT_STATE_PEN_PRESENT_WITH_ERASER ||
-				info.status == OBJECT_STATE_PEN_PRESENT_WITH_TIP)
-			{
-				HasPen = TRUE;
-				ReportContext->PenPresent = TRUE;
-
-				status = ReportPen(
-					ReportContext,
-					TRUE,
-					FALSE,
-					info.status == OBJECT_STATE_PEN_PRESENT_WITH_ERASER,
-					info.status == OBJECT_STATE_PEN_PRESENT_WITH_ERASER,
-					TRUE,
-					(USHORT)info.x,
-					(USHORT)info.y,
-					1,
-					0,
-					0);
-				if (!NT_SUCCESS(status))
-				{
-					Trace(
-						TRACE_LEVEL_ERROR,
-						TRACE_REPORTING,
-						"Error sending hid report for passive pen - 0x%08lX",
-						status);
-
-					goto exit;
-				}
-			}
 
 			HidReport.TouchReport.Contacts[currentFingerIndex].ContactID = (UCHAR)currentlyReporting;
 			SctatchX = (USHORT)info.x;
@@ -481,34 +386,6 @@ Return Value:
 			TouchesReported++;
 		}
 
-		if (HasPen == FALSE && ReportContext->PenPresent == TRUE)
-		{
-			ReportContext->PenPresent = FALSE;
-
-			status = ReportPen(
-				ReportContext,
-				FALSE,
-				FALSE,
-				FALSE,
-				FALSE,
-				FALSE,
-				0,
-				0,
-				0,
-				0,
-				0);
-
-			if (!NT_SUCCESS(status))
-			{
-				Trace(
-					TRACE_LEVEL_ERROR,
-					TRACE_REPORTING,
-					"Error sending hid report for passive pen - 0x%08lX",
-					status);
-
-				goto exit;
-			}
-		}
 	}
 
 	status = TchSendReport(ReportContext->PingPongQueue, &HidReport);

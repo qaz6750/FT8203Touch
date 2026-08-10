@@ -45,9 +45,7 @@ const UCHAR gReportDescriptor[] = {
 	FOCALTECH_FT5X_DIGITIZER_DIAGNOSTIC3,
 	FOCALTECH_FT5X_DIGITIZER_DIAGNOSTIC4,*/
 	FOCALTECH_FT5X_DIGITIZER_FINGER,
-	FOCALTECH_FT5X_DIGITIZER_REPORTMODE,
-	//FOCALTECH_FT5X_DIGITIZER_KEYPAD,
-	//FOCALTECH_FT5X_DIGITIZER_STYLUS
+	FOCALTECH_FT5X_DIGITIZER_REPORTMODE
 };
 const ULONG gdwcbReportDescriptor = sizeof(gReportDescriptor);
 
@@ -83,34 +81,6 @@ TchSendReport(
 
 	switch (hidReportFromDriver->ReportID)
 	{
-	case REPORTID_STYLUS:
-	{
-	Trace(
-		TRACE_LEVEL_INFORMATION,
-		TRACE_HID,
-		"HID pen: "
-		"Tip Switch = %d, "
-		"Barrel Switch = %d, "
-		"Invert = %d, "
-		"Eraser = %d, "
-		"In Range = %d, "
-		"X = %d, "
-		"Y = %d, "
-		"Tip Pressure = %d, "
-		"X Tilt = %d, "
-		"Y Tilt = %d",
-		hidReportFromDriver->PenReport.TipSwitch,
-		hidReportFromDriver->PenReport.BarrelSwitch,
-		hidReportFromDriver->PenReport.Invert,
-		hidReportFromDriver->PenReport.Eraser,
-		hidReportFromDriver->PenReport.InRange,
-		hidReportFromDriver->PenReport.X,
-		hidReportFromDriver->PenReport.Y,
-		hidReportFromDriver->PenReport.TipPressure,
-		hidReportFromDriver->PenReport.XTilt,
-		hidReportFromDriver->PenReport.YTilt);
-	break;
-	}
 	case REPORTID_FINGER:
 	{
 		Trace(
@@ -954,40 +924,6 @@ Return Value:
 			TRACE_LEVEL_INFORMATION,
 			TRACE_DRIVER,
 			"%!FUNC! Report REPORTID_PTPHQA is fulfilled"
-		);
-
-		break;
-	}
-	case REPORTID_PENHQA:
-	{
-		Trace(
-			TRACE_LEVEL_INFORMATION,
-			TRACE_DRIVER,
-			"%!FUNC! Report REPORTID_PENHQA is requested"
-		);
-
-		// Size sanity check
-		ReportSize = sizeof(PTP_DEVICE_HQA_CERTIFICATION_REPORT);
-		if (featurePacket->reportBufferLen < ReportSize)
-		{
-			status = STATUS_INVALID_BUFFER_SIZE;
-			Trace(
-				TRACE_LEVEL_ERROR,
-				TRACE_DRIVER,
-				"%!FUNC! Report buffer is too small."
-			);
-			goto exit;
-		}
-
-		PPTP_DEVICE_HQA_CERTIFICATION_REPORT certReport = (PPTP_DEVICE_HQA_CERTIFICATION_REPORT)featurePacket->reportBuffer;
-
-		*certReport->CertificationBlob = DEFAULT_PTP_HQA_BLOB;
-		certReport->ReportID = REPORTID_PENHQA;
-
-		Trace(
-			TRACE_LEVEL_INFORMATION,
-			TRACE_DRIVER,
-			"%!FUNC! Report REPORTID_PENHQA is fulfilled"
 		);
 
 		break;
